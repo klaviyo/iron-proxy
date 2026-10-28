@@ -19,17 +19,22 @@ fi
 
 repo_dir=$(cd "$(dirname "$0")/.." && pwd)
 build_context=$(mktemp -d)
-trap 'rm -rf "$build_context"' EXIT
-mkdir -p "$build_context/linux/amd64"
+compiler_container=""
+trap 'if [[ -n "$compiler_container" ]]; then docker rm -f "$compiler_container" >/dev/null; fi; rm -rf "$build_context"' EXIT
 
 # Match upstream's GoReleaser binary layout, then reuse its release Dockerfile.
-docker run --rm --user "$(id -u):$(id -g)" \
-  -v "$repo_dir:/src:ro" -v "$build_context:/out" -w /src \
+compiler_container=$(docker create --user "$(id -u):$(id -g)" \
+  -v "$repo_dir:/src:ro" -w /src \
   -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH=amd64 -e GOFLAGS=-mod=readonly \
   -e GOCACHE=/tmp/go-build -e GOMODCACHE=/tmp/go-mod \
   -e "IRON_PROXY_BUILD_VERSION=$BUILDKITE_COMMIT" \
   golang:1.27.3-alpine sh -ec \
-  'go build -trimpath -ldflags "-s -w -X github.com/ironsh/iron-proxy/internal/version.Version=$IRON_PROXY_BUILD_VERSION" -o /out/linux/amd64/iron-proxy ./cmd/iron-proxy'
+  'mkdir -p /tmp/output/linux/amd64
+   go build -trimpath -ldflags "-s -w -X github.com/ironsh/iron-proxy/internal/version.Version=$IRON_PROXY_BUILD_VERSION" -o /tmp/output/linux/amd64/iron-proxy ./cmd/iron-proxy
+   cd ssh
+   go build -trimpath -ldflags "-s -w" -o /tmp/output/linux/amd64/iron-ssh ./cmd/iron-ssh')
+docker start --attach "$compiler_container"
+docker cp "$compiler_container:/tmp/output/linux" "$build_context/"
 cp "$repo_dir/Dockerfile.release" "$build_context/Dockerfile.release"
 
 if [[ "$mode" == build ]]; then
