@@ -59,9 +59,17 @@ Centaur's deployment. Publishing this base does not deploy or automatically
 advance Centaur. Both the base's HTTP binary and `iron-ssh` come from this
 checkout. The runtime image retains the pinned upstream base.
 
-Pipeline registration is Terraform-managed in infrastructure-deployment's
-`infrastructure/live/eng/buildkite/iron_proxy.tf`. Merge the fork pipeline
-before applying that registration. The shared pipeline router loads the
-repository's `.buildkite/pipeline.yml`; no custom bootstrap or credentials
-belong in this repository. The registration uses `klaviyo-main`, builds
-same-repository PRs, and refuses fork PRs.
+Register the pipeline using the same CLI path as Centaur:
+
+```sh
+klaviyocli kcd admin config-pipeline iron-proxy \
+  --gh-repo iron-proxy --default-branch klaviyo-main --cluster default
+```
+
+Creation always starts in pre-release mode (even with `--live`), which builds
+PRs/other branches but excludes the default branch and does not publish commit
+statuses. After the pipeline definition is merged and PR validation succeeds,
+run the command again with `--live` to enable default-branch builds and commit
+statuses. The CLI configures the shared bootstrap template, GitHub webhook,
+and Everyone Build & Read access. It requires `BUILDKITE_API_TOKEN` and GitHub
+webhook permissions. No Terraform registration is needed.
