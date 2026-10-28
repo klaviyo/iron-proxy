@@ -42,3 +42,26 @@ revokes active connections. Treat the grants file as trusted management input.
 Run `go test -race ./...` in this module. No SSH functionality is enabled merely
 by installing this binary; the embedding platform must supply the paired key,
 authenticated authorizer, destination grants, and lifecycle wiring.
+
+## Klaviyo builds
+
+The `iron-proxy` Buildkite pipeline uses `.buildkite/pipeline.yml` on the fork.
+It tests the HTTP and SSH modules with the race detector and vet, then builds
+an AMD64 image. PRs and other branches build without publishing. Non-PR builds
+of `klaviyo-main` use `kbc docker-utils build-and-publish` to publish
+`klaviyo-iron-proxy:<full-commit-sha>` to eng and dev ECR. CI owns repository
+creation and policies; no separate Terraform ECR resource is needed.
+
+The `iron-proxy-image-refs.txt` build artifact records both registry references
+by digest. Use the eng reference as `IRON_PROXY_IMAGE` when building Centaur's
+`services/iron-proxy/Dockerfile`, then publish and pin that wrapper image in
+Centaur's deployment. Publishing this base does not deploy or automatically
+advance Centaur. Both the base's HTTP binary and `iron-ssh` come from this
+checkout. The runtime image retains the pinned upstream base.
+
+Pipeline registration is Terraform-managed in infrastructure-deployment's
+`infrastructure/live/eng/buildkite/iron_proxy.tf`. Merge the fork pipeline
+before applying that registration. The shared pipeline router loads the
+repository's `.buildkite/pipeline.yml`; no custom bootstrap or credentials
+belong in this repository. The registration uses `klaviyo-main`, builds
+same-repository PRs, and refuses fork PRs.
