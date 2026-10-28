@@ -29,7 +29,9 @@ docker run --rm --user "$(id -u):$(id -g)" \
   -e GOCACHE=/tmp/go-build -e GOMODCACHE=/tmp/go-mod \
   -e "IRON_PROXY_BUILD_VERSION=$BUILDKITE_COMMIT" \
   golang:1.27.3-alpine sh -ec \
-  'go build -trimpath -ldflags "-s -w -X github.com/ironsh/iron-proxy/internal/version.Version=$IRON_PROXY_BUILD_VERSION" -o /out/linux/amd64/iron-proxy ./cmd/iron-proxy'
+  'go build -trimpath -ldflags "-s -w -X github.com/ironsh/iron-proxy/internal/version.Version=$IRON_PROXY_BUILD_VERSION" -o /out/linux/amd64/iron-proxy ./cmd/iron-proxy
+   cd ssh
+   go build -trimpath -ldflags "-s -w" -o /out/linux/amd64/iron-ssh ./cmd/iron-ssh'
 cp "$repo_dir/Dockerfile.release" "$build_context/Dockerfile.release"
 
 if [[ "$mode" == build ]]; then
