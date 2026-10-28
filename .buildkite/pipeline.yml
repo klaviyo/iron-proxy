@@ -11,12 +11,12 @@ steps:
     key: image
     if: build.branch != "klaviyo-main" || build.pull_request.id != null
     timeout_in_minutes: 30
-    command: docker build --platform linux/amd64 -f .buildkite/Dockerfile -t klaviyo-iron-proxy:${BUILDKITE_COMMIT} .
+    command: .buildkite/build.sh
 
   - label: "Publish Iron Proxy to eng and dev ECR"
     key: publish
     if: build.branch == "klaviyo-main" && build.pull_request.id == null
     timeout_in_minutes: 30
-    command: .buildkite/publish.sh
+    command: .buildkite/build.sh publish
     artifact_paths:
       - iron-proxy-image-refs.txt
