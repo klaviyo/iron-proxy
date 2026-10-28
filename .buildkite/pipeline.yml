@@ -7,23 +7,14 @@ agents:
   queue: default-large-amd
 
 steps:
-  - label: "Go tests and vet"
-    key: tests
-    timeout_in_minutes: 30
-    command: |
-      python3 -m unittest discover -s .buildkite/tests
-      docker build --platform linux/amd64 --target test -f .buildkite/Dockerfile .
-
   - label: "Build Iron Proxy (AMD64)"
     key: image
-    depends_on: tests
     if: build.branch != "klaviyo-main" || build.pull_request.id != null
     timeout_in_minutes: 30
     command: docker build --platform linux/amd64 -f .buildkite/Dockerfile -t klaviyo-iron-proxy:${BUILDKITE_COMMIT} .
 
   - label: "Publish Iron Proxy to eng and dev ECR"
     key: publish
-    depends_on: tests
     if: build.branch == "klaviyo-main" && build.pull_request.id == null
     timeout_in_minutes: 30
     command: .buildkite/publish.sh

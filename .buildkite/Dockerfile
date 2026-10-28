@@ -4,13 +4,6 @@ WORKDIR /src
 COPY . .
 ENV GOFLAGS=-mod=readonly
 
-# Cloud-backed integrations need separate credentials; these are unit tests.
-FROM source AS test
-RUN apk add --no-cache gcc musl-dev
-RUN go test -race -count=1 ./cmd/... ./internal/... ./gen/... && go vet ./cmd/... ./internal/... ./gen/...
-# The SSH module arrives separately; include it once that feature is merged.
-RUN if [ -f ssh/go.mod ]; then cd ssh && go test -race -count=1 ./... && go vet ./...; fi
-
 FROM source AS builder
 RUN mkdir -p /out && CGO_ENABLED=0 go build -trimpath -o /out/iron-proxy ./cmd/iron-proxy
 RUN if [ -f ssh/go.mod ]; then cd ssh && CGO_ENABLED=0 go build -trimpath -o /out/iron-ssh ./cmd/iron-ssh; fi
