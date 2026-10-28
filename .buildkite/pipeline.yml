@@ -1,0 +1,22 @@
+env:
+  AWS_ECR_LOGIN_REGISTRY_IDS: "340433579684,439508887365"
+  DOCKER_BUILDKIT: "1"
+
+# Matches the AMD64 centaur-dev deployment and Centaur's image pipeline.
+agents:
+  queue: default-large-amd
+
+steps:
+  - label: "Build Iron Proxy (AMD64)"
+    key: image
+    if: build.branch != "klaviyo-main" || build.pull_request.id != null
+    timeout_in_minutes: 30
+    command: .buildkite/build.sh
+
+  - label: "Publish Iron Proxy to eng and dev ECR"
+    key: publish
+    if: build.branch == "klaviyo-main" && build.pull_request.id == null
+    timeout_in_minutes: 30
+    command: .buildkite/build.sh publish
+    artifact_paths:
+      - iron-proxy-image-refs.txt
