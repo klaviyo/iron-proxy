@@ -45,31 +45,7 @@ authenticated authorizer, destination grants, and lifecycle wiring.
 
 ## Klaviyo builds
 
-The `iron-proxy` Buildkite pipeline uses `.buildkite/pipeline.yml` on the fork.
-It tests the HTTP and SSH modules with the race detector and vet, then builds
-an AMD64 image. PRs and other branches build without publishing. Non-PR builds
-of `klaviyo-main` use `kbc docker-utils build-and-publish` to publish
-`klaviyo-iron-proxy:<full-commit-sha>` to eng and dev ECR. CI owns repository
-creation and policies; no separate Terraform ECR resource is needed.
-
-The `iron-proxy-image-refs.txt` build artifact records both registry references
-by digest. Use the eng reference as `IRON_PROXY_IMAGE` when building Centaur's
-`services/iron-proxy/Dockerfile`, then publish and pin that wrapper image in
-Centaur's deployment. Publishing this base does not deploy or automatically
-advance Centaur. Both the base's HTTP binary and `iron-ssh` come from this
-checkout. The runtime image retains the pinned upstream base.
-
-Register the pipeline using the same CLI path as Centaur:
-
-```sh
-klaviyocli kcd admin config-pipeline iron-proxy \
-  --gh-repo iron-proxy --default-branch klaviyo-main --cluster default
-```
-
-Creation always starts in pre-release mode (even with `--live`), which builds
-PRs/other branches but excludes the default branch and does not publish commit
-statuses. After the pipeline definition is merged and PR validation succeeds,
-run the command again with `--live` to enable default-branch builds and commit
-statuses. The CLI configures the shared bootstrap template, GitHub webhook,
-and Everyone Build & Read access. It requires `BUILDKITE_API_TOKEN` and GitHub
-webhook permissions. No Terraform registration is needed.
+Repository CI and ECR publishing are managed separately in
+[Klaviyo's Buildkite pipeline PR](https://github.com/klaviyo/iron-proxy/pull/3).
+After that configuration is merged, it also tests and packages this SSH module
+when present. See `.buildkite/README.md` for onboarding and digest handoff.
