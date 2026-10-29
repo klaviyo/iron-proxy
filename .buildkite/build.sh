@@ -7,8 +7,8 @@ if [[ "$mode" != build && "$mode" != publish ]]; then
   exit 1
 fi
 if [[ "$mode" == publish ]]; then
-  if [[ "${BUILDKITE_BRANCH:-}" != klaviyo-main || "${BUILDKITE_PULL_REQUEST:-}" != false ]]; then
-    echo 'Publishing requires a non-PR build of klaviyo-main.' >&2
+  if [[ ( "${BUILDKITE_BRANCH:-}" != klaviyo-main && "${BUILDKITE_BRANCH:-}" != feat/ssh-dynamic-targets ) || "${BUILDKITE_PULL_REQUEST:-}" != false ]]; then
+    echo 'Publishing requires a non-PR build of klaviyo-main or the SSH pilot branch.' >&2
     exit 1
   fi
 fi

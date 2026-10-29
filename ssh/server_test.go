@@ -297,6 +297,59 @@ func TestWstunnelV11Handshake(t *testing.T) {
 	require.NoError(t, err)
 	output, _ := session.Output("websocket")
 	require.Equal(t, "ok:websocket", string(output))
+
+	// Dynamic destinations use the WSS gateway's verified certificate instead
+	// of a per-pod SSH pin. The authorizer still approves each exact target.
+	tlsGrant := *g
+	tlsGrant.HostKey = ""
+	tlsGrant.TLSIdentity = true
+	route := "ee:" + base64.RawURLEncoding.EncodeToString([]byte(g.Destination))
+	for _, test := range []struct {
+		name    string
+		roots   *x509.CertPool
+		allowed bool
+	}{
+		{"verified TLS", roots, true}, {"untrusted TLS", x509.NewCertPool(), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			address, _ := testProxy(t, clientKey, proxyHost, func(_ context.Context, a Authorization) (*Grant, error) {
+				require.Equal(t, "ee", a.Route)
+				require.Equal(t, g.Destination, a.Destination)
+				return &tlsGrant, nil
+			}, test.roots)
+			client, err := ssh.Dial("tcp", address, &ssh.ClientConfig{User: route, Auth: []ssh.AuthMethod{ssh.PublicKeys(clientKey)}, HostKeyCallback: ssh.FixedHostKey(proxyHost.PublicKey()), Timeout: time.Second})
+			if !test.allowed {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			defer client.Close()
+			session, err := client.NewSession()
+			require.NoError(t, err)
+			output, err := session.Output("dynamic")
+			var exit *ssh.ExitError
+			require.ErrorAs(t, err, &exit)
+			require.Equal(t, 7, exit.ExitStatus())
+			require.Equal(t, "ok:dynamic", string(output))
+		})
+	}
+}
+
+func TestDynamicRoutesAndTLSIdentityValidation(t *testing.T) {
+	for _, value := range []string{"ee:", "ee:not*base64", "ee:" + strings.Repeat("a", 4096), strings.Repeat("a", 129)} {
+		_, _, err := parseRoute(value)
+		require.Error(t, err)
+	}
+	_, private := key(t)
+	host, _ := key(t)
+	g := grant(t, "example.com:22", host, private)
+	g.TLSIdentity = true
+	g.HostKey = ""
+	require.Error(t, validateGrant(g), "TLS identity must never be accepted for plain TCP")
+	g.Destination = "wss://example.com/events/events"
+	require.NoError(t, validateGrant(g))
+	g.HostKey = string(ssh.MarshalAuthorizedKey(host.PublicKey()))
+	require.Error(t, validateGrant(g), "ambiguous identity modes must fail closed")
 }
 
 func TestDeniedIPAndWrongUpstreamHost(t *testing.T) {

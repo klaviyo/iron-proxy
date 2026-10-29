@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"log/slog"
 	"net"
+	"net/url"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -89,11 +92,12 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 		if !bytes.Equal(key.Marshal(), s.ClientPublicKey.Marshal()) {
 			return nil, errors.New("SSH access denied")
 		}
-		if len(meta.User()) == 0 || len(meta.User()) > 128 {
-			return nil, errors.New("invalid SSH route")
+		parsedRoute, destination, err := parseRoute(meta.User())
+		if err != nil {
+			return nil, err
 		}
-		route = meta.User()
-		auth = Authorization{Route: route, PublicKey: string(bytes.TrimSpace(ssh.MarshalAuthorizedKey(key)))}
+		route = parsedRoute
+		auth = Authorization{Route: route, Destination: destination, PublicKey: string(bytes.TrimSpace(ssh.MarshalAuthorizedKey(key)))}
 		grant, err := s.Authorize(ctx, auth)
 		if err != nil {
 			return nil, errors.New("SSH access denied")
@@ -105,9 +109,12 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 		if err != nil {
 			return nil, err
 		}
-		expected, _, _, _, err := ssh.ParseAuthorizedKey([]byte(grant.HostKey))
-		if err != nil {
-			return nil, errors.New("invalid upstream host identity")
+		var expected ssh.PublicKey
+		if !grant.TLSIdentity {
+			expected, _, _, _, err = ssh.ParseAuthorizedKey([]byte(grant.HostKey))
+			if err != nil {
+				return nil, errors.New("invalid upstream host identity")
+			}
 		}
 		if upstream != nil {
 			_ = upstream.Close()
@@ -119,15 +126,21 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 		if err = upstream.SetDeadline(time.Now().Add(timeout)); err != nil {
 			return nil, err
 		}
-		algorithms := []string{expected.Type()}
-		if expected.Type() == ssh.KeyAlgoRSA {
-			algorithms = []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256}
+		var algorithms []string
+		if expected != nil {
+			algorithms = []string{expected.Type()}
+			if expected.Type() == ssh.KeyAlgoRSA {
+				algorithms = []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256}
+			}
 		}
 		approved = grant
 		principal = grant.Principal
 		grantID = grant.ID
 		return &ssh.Upstream{Conn: upstream, Address: grant.Destination, ClientConfig: ssh.ClientConfig{User: grant.Username, HostKeyAlgorithms: algorithms, Auth: []ssh.AuthMethod{ssh.PublicKeys(credential)}, HostKeyCallback: func(_ string, _ net.Addr, actual ssh.PublicKey) error {
-			if !bytes.Equal(expected.Marshal(), actual.Marshal()) {
+			// TLS-identity grants are WSS-only (validated before dialing). The
+			// transport authenticates the exact URL's server certificate with no
+			// redirects or insecure TLS option; SSH remains inside that tunnel.
+			if expected != nil && !bytes.Equal(expected.Marshal(), actual.Marshal()) {
 				return errors.New("SSH host identity mismatch")
 			}
 			return nil
@@ -161,10 +174,37 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 }
 
 func validateGrant(g *Grant) error {
-	if g == nil || g.ID == "" || g.Principal == "" || g.Generation == "" || g.Username == "" || g.HostKey == "" || g.Destination == "" || !g.ExpiresAt.After(time.Now()) || time.Until(g.ExpiresAt) > 15*time.Minute {
+	if g == nil || g.ID == "" || g.Principal == "" || g.Generation == "" || g.Username == "" || g.Destination == "" || !g.ExpiresAt.After(time.Now()) || time.Until(g.ExpiresAt) > 15*time.Minute {
 		return errors.New("invalid SSH grant")
 	}
+	if g.TLSIdentity {
+		u, err := url.Parse(g.Destination)
+		if err != nil || u.Scheme != "wss" || g.HostKey != "" {
+			return errors.New("invalid TLS identity grant")
+		}
+	} else if g.HostKey == "" {
+		return errors.New("SSH host key required")
+	}
 	return nil
+}
+
+// A client may name a destination, but only the authorizer can approve it.
+// The encoded value carries no credentials and is bounded before decoding.
+func parseRoute(value string) (string, string, error) {
+	if strings.HasPrefix(value, "ee:") {
+		if len(value) > 4096 {
+			return "", "", errors.New("invalid SSH target")
+		}
+		data, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(value, "ee:"))
+		if err != nil || len(data) == 0 || len(data) > 2048 {
+			return "", "", errors.New("invalid SSH target")
+		}
+		return "ee", string(data), nil
+	}
+	if len(value) == 0 || len(value) > 128 {
+		return "", "", errors.New("invalid SSH route")
+	}
+	return value, "", nil
 }
 
 func (s *Server) renew(ctx context.Context, cancel context.CancelFunc, a Authorization, g *Grant) {

@@ -26,14 +26,16 @@ type Grant struct {
 	Generation  string    `json:"generation" yaml:"generation"`
 	Username    string    `json:"username" yaml:"username"`
 	HostKey     string    `json:"host_key" yaml:"host_key"`
+	TLSIdentity bool      `json:"tls_identity,omitempty" yaml:"tls_identity"`
 	PrivateKey  yaml.Node `json:"-" yaml:"private_key"`
 	ExpiresAt   time.Time `json:"expires_at" yaml:"expires_at"`
 }
 
 // Authorization identifies a sandbox key and a configured route, never a user.
 type Authorization struct {
-	Route     string `json:"route"`
-	PublicKey string `json:"public_key"`
+	Route       string `json:"route"`
+	PublicKey   string `json:"public_key"`
+	Destination string `json:"destination,omitempty"`
 }
 
 // Authorizer is called again during active connections; errors revoke access.
@@ -107,6 +109,9 @@ func FileAuthorizer(path string) Authorizer {
 		}
 		for _, e := range entries {
 			if e.Route == a.Route && e.PublicKey == a.PublicKey {
+				if a.Destination != "" && a.Destination != e.Grant.Destination {
+					return nil, errors.New("SSH access denied")
+				}
 				return &e.Grant, nil
 			}
 		}
