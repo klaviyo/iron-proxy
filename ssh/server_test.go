@@ -382,6 +382,42 @@ func TestGrantExpiryAndGeneration(t *testing.T) {
 	require.Error(t, validateGrant(&other))
 }
 
+func TestFileGrantsMatchRequestedDestination(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "grants.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+- route: ee
+  public_key: ssh-ed25519 client
+  grant:
+    id: first
+    destination: wss://first.example.com/events/events
+- route: ee
+  public_key: ssh-ed25519 client
+  grant:
+    id: second
+    destination: wss://second.example.com/events/events
+`), 0600))
+	cases := []struct {
+		name, destination, grantID string
+	}{
+		{"first destination", "wss://first.example.com/events/events", "first"},
+		{"second destination", "wss://second.example.com/events/events", "second"},
+		{"unlisted destination", "wss://third.example.com/events/events", ""},
+		{"legacy route without destination", "", "first"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g, err := FileAuthorizer(path)(context.Background(), Authorization{Route: "ee", PublicKey: "ssh-ed25519 client", Destination: tc.destination})
+			if tc.grantID == "" {
+				require.Error(t, err)
+				require.Nil(t, g)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.grantID, g.ID)
+		})
+	}
+}
+
 func TestFileGrantRemoval(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "grants.yaml")
 	require.NoError(t, os.WriteFile(path, []byte("[]"), 0600))

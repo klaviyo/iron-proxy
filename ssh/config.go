@@ -110,7 +110,7 @@ func FileAuthorizer(path string) Authorizer {
 		for _, e := range entries {
 			if e.Route == a.Route && e.PublicKey == a.PublicKey {
 				if a.Destination != "" && a.Destination != e.Grant.Destination {
-					return nil, errors.New("SSH access denied")
+					continue
 				}
 				return &e.Grant, nil
 			}
