@@ -7,8 +7,12 @@ if [[ "$mode" != build && "$mode" != publish ]]; then
   exit 1
 fi
 if [[ "$mode" == publish ]]; then
-  if [[ "${BUILDKITE_BRANCH:-}" != klaviyo-main || "${BUILDKITE_PULL_REQUEST:-}" != false ]]; then
-    echo 'Publishing requires a non-PR build of klaviyo-main.' >&2
+  if [[ "${BUILDKITE_BRANCH:-}" == klaviyo-main && "${BUILDKITE_PULL_REQUEST:-}" == false ]]; then
+    :
+  elif [[ "${BUILDKITE_BRANCH:-}" == feat/ssh-proxy-consolidated && ( "${BUILDKITE_PULL_REQUEST:-}" == false || "${BUILDKITE_PULL_REQUEST:-}" == 6 ) ]]; then
+    :
+  else
+    echo 'Publishing requires main or the approved SSH PR branch.' >&2
     exit 1
   fi
 fi
@@ -51,9 +55,9 @@ fi
 # Centaur must consume a digest, never a floating branch/latest tag.
 : > iron-proxy-image-refs.txt
 for registry in 340433579684 439508887365; do
-  digest=$(aws ecr describe-images --region us-east-1 --registry-id "$registry" \
+  digest=$(aws ecr batch-get-image --region us-east-1 --registry-id "$registry" \
     --repository-name klaviyo-iron-proxy --image-ids "imageTag=$BUILDKITE_COMMIT" \
-    --query 'imageDetails[0].imageDigest' --output text)
+    --query 'images[0].imageId.imageDigest' --output text)
   if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
     echo "No valid image digest returned for registry $registry." >&2
     exit 1
