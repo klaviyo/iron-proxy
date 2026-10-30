@@ -7,8 +7,8 @@ if [[ "$mode" != build && "$mode" != publish ]]; then
   exit 1
 fi
 if [[ "$mode" == publish ]]; then
-  if [[ ( "${BUILDKITE_BRANCH:-}" != klaviyo-main && "${BUILDKITE_BRANCH:-}" != feat/ssh-dynamic-targets ) || "${BUILDKITE_PULL_REQUEST:-}" != false ]]; then
-    echo 'Publishing requires a non-PR build of klaviyo-main or the SSH pilot branch.' >&2
+  if [[ "${BUILDKITE_BRANCH:-}" != klaviyo-main || "${BUILDKITE_PULL_REQUEST:-}" != false ]]; then
+    echo 'Publishing requires a non-PR build of klaviyo-main.' >&2
     exit 1
   fi
 fi
@@ -30,9 +30,7 @@ compiler_container=$(docker create --user "$(id -u):$(id -g)" \
   -e "IRON_PROXY_BUILD_VERSION=$BUILDKITE_COMMIT" \
   golang:1.27.3-alpine sh -ec \
   'mkdir -p /tmp/output/linux/amd64
-   go build -trimpath -ldflags "-s -w -X github.com/ironsh/iron-proxy/internal/version.Version=$IRON_PROXY_BUILD_VERSION" -o /tmp/output/linux/amd64/iron-proxy ./cmd/iron-proxy
-   cd ssh
-   go build -trimpath -ldflags "-s -w" -o /tmp/output/linux/amd64/iron-ssh ./cmd/iron-ssh')
+   go build -trimpath -ldflags "-s -w -X github.com/ironsh/iron-proxy/internal/version.Version=$IRON_PROXY_BUILD_VERSION" -o /tmp/output/linux/amd64/iron-proxy ./cmd/iron-proxy')
 docker start --attach "$compiler_container"
 docker cp "$compiler_container:/tmp/output/linux" "$build_context/"
 cp "$repo_dir/Dockerfile.release" "$build_context/Dockerfile.release"

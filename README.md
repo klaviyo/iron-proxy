@@ -1103,10 +1103,3 @@ To verify a specific binary against the signed checksum list (example: `iron-pro
 ```bash
 shasum -a 256 iron-proxy-linux-amd64 | grep -F "$(grep -F 'iron-proxy-linux-amd64' checksums.txt | awk '{print $1}')"
 ```
-
-### SSH credential proxy (local development)
-
-The opt-in [SSH companion](ssh/README.md) maps a sandbox's disposable identity
-onto a separately held upstream key using sshpiper. It supports non-interactive
-exec, SFTP, and wstunnel v11 WSS endpoints, with pinned SSH host identities and
-renewable authorization leases. It is built separately from the HTTP proxy.
