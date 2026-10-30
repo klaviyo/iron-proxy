@@ -9,13 +9,14 @@ agents:
 steps:
   - label: "Build Iron Proxy (AMD64)"
     key: image
-    if: build.branch != "klaviyo-main" || build.pull_request.id != null
+    if: >-
+      !((build.branch == "klaviyo-main" && build.pull_request.id == null) || (build.branch == "feat/ssh-proxy-consolidated" && (build.pull_request.id == null || build.pull_request.id == "6")))
     timeout_in_minutes: 30
     command: .buildkite/build.sh
 
   - label: "Publish Iron Proxy to eng and dev ECR"
     key: publish
-    if: build.branch == "klaviyo-main" && build.pull_request.id == null
+    if: (build.branch == "klaviyo-main" && build.pull_request.id == null) || (build.branch == "feat/ssh-proxy-consolidated" && (build.pull_request.id == null || build.pull_request.id == "6"))
     timeout_in_minutes: 30
     command: .buildkite/build.sh publish
     artifact_paths:
