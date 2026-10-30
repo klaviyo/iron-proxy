@@ -98,7 +98,11 @@ func testBackend(t *testing.T, host, userKey ssh.Signer) string {
 									_, _ = io.Copy(io.Discard, stream)
 									return
 								}
-								if _, err := stream.Write([]byte("ok:" + cmd.Command)); err != nil {
+								output := []byte("ok:" + cmd.Command)
+								if cmd.Command == "stream-output" {
+									output = bytes.Repeat([]byte("output"), 1<<21)
+								}
+								if _, err := stream.Write(output); err != nil {
 									return
 								}
 								_, _ = stream.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{7}))
@@ -440,4 +444,40 @@ func TestOpenSSHBookkeepingDoesNotDisconnect(t *testing.T) {
 	output, err := io.ReadAll(channel)
 	require.NoError(t, err)
 	require.Equal(t, "ok:after-bookkeeping", string(output))
+}
+
+func TestKeepalivesDuringServerOutput(t *testing.T) {
+	clientKey, _ := key(t)
+	proxyHost, _ := key(t)
+	backendHost, _ := key(t)
+	upstreamKey, private := key(t)
+	g := grant(t, testBackend(t, backendHost, upstreamKey), backendHost, private)
+	address, _ := testProxy(t, clientKey, proxyHost, func(context.Context, Authorization) (*Grant, error) { return g, nil }, nil)
+	client, err := connect(address, clientKey, proxyHost)
+	require.NoError(t, err)
+	defer client.Close()
+	session, err := client.NewSession()
+	require.NoError(t, err)
+	defer session.Close()
+	output, err := session.StdoutPipe()
+	require.NoError(t, err)
+	require.NoError(t, session.Start("stream-output"))
+	keepalives := make(chan error, 1)
+	go func() {
+		for range 200 {
+			_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+			if err != nil {
+				keepalives <- err
+				return
+			}
+		}
+		keepalives <- nil
+	}()
+	data, err := io.ReadAll(output)
+	require.NoError(t, err)
+	require.NoError(t, <-keepalives)
+	var exit *ssh.ExitError
+	require.ErrorAs(t, session.Wait(), &exit)
+	require.Equal(t, 7, exit.ExitStatus())
+	require.Equal(t, bytes.Repeat([]byte("output"), 1<<21), data)
 }
