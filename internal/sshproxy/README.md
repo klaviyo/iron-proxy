@@ -31,8 +31,9 @@ unauthorized routes. Responses are limited to 1 MiB; errors never expose their
 bodies or credential values. Redirects are not followed.
 
 The paired public key is checked before authorization or any upstream dial.
-Exec and SFTP channels are supported; other capabilities terminate the
-connection. Grants normally require a pinned SSH host key and verified WSS TLS.
+Exec and SFTP channels are supported; forwarding is blocked. Global requests
+are refused locally, and no-reply environment/end-of-write requests are discarded.
+Other unsupported channel capabilities terminate the connection. Grants normally require a pinned SSH host key and verified WSS TLS.
 An authorizer may explicitly return `tls_identity: true` with an empty
 `host_key` for deployment-allowed WSS gateways. This authenticates the exact
 destination using the TLS certificate and hostname, allowing the SSH key inside

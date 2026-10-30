@@ -127,7 +127,7 @@ func LoadFromNode(ctx context.Context, node yaml.Node, logger *slog.Logger) (*Se
 	if cfg.DenyCIDRs == nil {
 		cfg.DenyCIDRs = dnsguard.DefaultDenyCIDRs
 	}
-	listener, err := net.Listen("tcp", cfg.Listen)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Listen)
 	if err != nil {
 		return nil, nil, errors.New("SSH listener unavailable")
 	}

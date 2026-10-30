@@ -293,7 +293,10 @@ func TestWstunnelV11Handshake(t *testing.T) {
 	defer client.Close()
 	session, err := client.NewSession()
 	require.NoError(t, err)
-	output, _ := session.Output("websocket")
+	output, err := session.Output("websocket")
+	var exit *ssh.ExitError
+	require.ErrorAs(t, err, &exit)
+	require.Equal(t, 7, exit.ExitStatus())
 	require.Equal(t, "ok:websocket", string(output))
 
 	// Dynamic destinations use the WSS gateway's verified certificate instead
@@ -406,4 +409,35 @@ func TestHTTPAuthorizationUsesProxyTokenAndDoesNotLeakErrors(t *testing.T) {
 	_, err := HTTPAuthorizer(controller.URL, "test-only-token")(context.Background(), Authorization{Route: "ee"})
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "test-upstream-secret")
+}
+
+func TestOpenSSHBookkeepingDoesNotDisconnect(t *testing.T) {
+	clientKey, _ := key(t)
+	proxyHost, _ := key(t)
+	backendHost, _ := key(t)
+	upstreamKey, private := key(t)
+	g := grant(t, testBackend(t, backendHost, upstreamKey), backendHost, private)
+	address, _ := testProxy(t, clientKey, proxyHost, func(context.Context, Authorization) (*Grant, error) { return g, nil }, nil)
+	client, err := connect(address, clientKey, proxyHost)
+	require.NoError(t, err)
+	defer client.Close()
+	for _, request := range []string{"keepalive@openssh.com", "tcpip-forward"} {
+		ok, _, err := client.SendRequest(request, true, nil)
+		require.NoError(t, err)
+		require.False(t, ok, "global requests must be refused locally")
+	}
+	channel, requests, err := client.OpenChannel("session", nil)
+	require.NoError(t, err)
+	defer channel.Close()
+	go ssh.DiscardRequests(requests)
+	for _, request := range []string{"env", "eow@openssh.com"} {
+		_, err := channel.SendRequest(request, false, nil)
+		require.NoError(t, err)
+	}
+	ok, err := channel.SendRequest("exec", true, ssh.Marshal(struct{ Command string }{"after-bookkeeping"}))
+	require.NoError(t, err)
+	require.True(t, ok)
+	output, err := io.ReadAll(channel)
+	require.NoError(t, err)
+	require.Equal(t, "ok:after-bookkeeping", string(output))
 }

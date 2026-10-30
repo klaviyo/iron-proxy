@@ -16,7 +16,7 @@ func downstreamPolicy(packet []byte) (ssh.PipePacketHookMethod, []byte, error) {
 	}
 	switch packet[0] {
 	case 80:
-		return deny()
+		return refuseGlobalRequest(packet)
 	case 90:
 		var open struct {
 			Type      string
@@ -40,6 +40,12 @@ func downstreamPolicy(packet []byte) (ssh.PipePacketHookMethod, []byte, error) {
 		}
 		switch req.Type {
 		case "exec", "signal":
+		case "env", "eow@openssh.com":
+			if req.WantReply {
+				return deny()
+			}
+			// Ignore client bookkeeping without exposing environment injection.
+			return ssh.PipePacketHookTransform, nil, nil
 		case "subsystem":
 			var sub struct{ Name string }
 			if ssh.Unmarshal(req.Payload, &sub) != nil || sub.Name != "sftp" {
@@ -57,18 +63,23 @@ func upstreamPolicy(packet []byte) (ssh.PipePacketHookMethod, []byte, error) {
 		return ssh.PipePacketHookTransform, nil, errCapabilityDenied
 	}
 	if packet[0] == 80 {
-		var req struct {
-			Type      string
-			WantReply bool
-			Payload   []byte `ssh:"rest"`
-		}
-		if ssh.Unmarshal(packet[1:], &req) != nil {
-			return ssh.PipePacketHookTransform, nil, errors.New("invalid upstream request")
-		}
-		if req.WantReply {
-			return ssh.PipePacketHookReply, []byte{82}, nil
-		}
-		return ssh.PipePacketHookTransform, nil, nil
+		return refuseGlobalRequest(packet)
 	}
 	return ssh.PipePacketHookTransform, packet, nil
+}
+
+// Refuse globals locally, including forwarding and OpenSSH keepalives.
+func refuseGlobalRequest(packet []byte) (ssh.PipePacketHookMethod, []byte, error) {
+	var req struct {
+		Type      string
+		WantReply bool
+		Payload   []byte `ssh:"rest"`
+	}
+	if ssh.Unmarshal(packet[1:], &req) != nil {
+		return ssh.PipePacketHookTransform, nil, errCapabilityDenied
+	}
+	if req.WantReply {
+		return ssh.PipePacketHookReply, []byte{82}, nil
+	}
+	return ssh.PipePacketHookTransform, nil, nil
 }

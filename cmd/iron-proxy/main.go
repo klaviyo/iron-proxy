@@ -90,7 +90,11 @@ func main() {
 		os.Exit(1)
 	}
 	if sshListener != nil {
-		defer sshListener.Close()
+		defer func() {
+			if err := sshListener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+				logger.Error("closing SSH listener", slog.String("error", err.Error()))
+			}
+		}()
 	}
 
 	// CLI flag takes precedence over environment variable.
