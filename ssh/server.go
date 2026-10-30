@@ -76,7 +76,10 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 	if timeout == 0 {
 		timeout = 15 * time.Second
 	}
-	if conn.SetDeadline(time.Now().Add(timeout)) != nil {
+	handshakeCtx, handshakeCancel := context.WithTimeout(ctx, timeout)
+	defer handshakeCancel()
+	handshakeDeadline, _ := handshakeCtx.Deadline()
+	if conn.SetDeadline(handshakeDeadline) != nil {
 		return
 	}
 	var approved *Grant
@@ -98,14 +101,14 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 		}
 		route = parsedRoute
 		auth = Authorization{Route: route, Destination: destination, PublicKey: string(bytes.TrimSpace(ssh.MarshalAuthorizedKey(key)))}
-		grant, err := s.Authorize(ctx, auth)
+		grant, err := s.Authorize(handshakeCtx, auth)
 		if err != nil {
 			return nil, errors.New("SSH access denied")
 		}
 		if err = validateGrant(grant); err != nil {
 			return nil, err
 		}
-		credential, err := signer(ctx, grant.PrivateKey, s.Logger)
+		credential, err := signer(handshakeCtx, grant.PrivateKey, s.Logger)
 		if err != nil {
 			return nil, err
 		}
@@ -119,11 +122,15 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 		if upstream != nil {
 			_ = upstream.Close()
 		}
-		upstream, err = transport(ctx, grant.Destination, s.DenyCIDRs, s.TLSRootCAs)
+		connected, err := transport(handshakeCtx, grant.Destination, s.DenyCIDRs, s.TLSRootCAs)
 		if err != nil {
 			return nil, errors.New("SSH upstream unavailable")
 		}
-		if err = upstream.SetDeadline(time.Now().Add(timeout)); err != nil {
+		upstream = connected
+		// Capture this connection, not the mutable upstream variable. Revocation
+		// must interrupt blocked writes as well as downstream reads.
+		context.AfterFunc(ctx, func() { _ = connected.Close() })
+		if err = upstream.SetDeadline(handshakeDeadline); err != nil {
 			return nil, err
 		}
 		var algorithms []string
@@ -158,6 +165,7 @@ func (s *Server) handle(parent context.Context, conn net.Conn) {
 	if conn.SetDeadline(time.Time{}) != nil || upstream.SetDeadline(time.Time{}) != nil {
 		return
 	}
+	handshakeCancel()
 	action, reason = "allow", "connection_closed"
 	leaseCtx, leaseCancel := context.WithCancel(ctx)
 	defer leaseCancel()
@@ -237,7 +245,15 @@ func sameGrant(a, b *Grant) bool {
 	x, y := *a, *b
 	x.ExpiresAt = time.Time{}
 	y.ExpiresAt = time.Time{}
-	return reflect.DeepEqual(x, y)
+	x.PrivateKey, y.PrivateKey = yaml.Node{}, yaml.Node{}
+	if !reflect.DeepEqual(x, y) {
+		return false
+	}
+	var sourceA, sourceB any
+	if a.PrivateKey.Decode(&sourceA) != nil || b.PrivateKey.Decode(&sourceB) != nil {
+		return false
+	}
+	return reflect.DeepEqual(sourceA, sourceB)
 }
 
 // ParseHostKey resolves a proxy-only credential source.

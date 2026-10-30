@@ -22,6 +22,9 @@ import (
 )
 
 func transport(ctx context.Context, target string, deny []string, roots *x509.CertPool) (net.Conn, error) {
+	// Bound TLS and HTTP upgrade negotiation too, not only the TCP dial.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	u, err := url.Parse(target)
 	if err != nil || u.User != nil || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
 		return nil, errors.New("invalid SSH destination")
