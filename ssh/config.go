@@ -6,11 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/ironsh/iron-proxy/internal/transform/secrets"
@@ -90,31 +88,4 @@ func signer(ctx context.Context, node yaml.Node, logger *slog.Logger) (ssh.Signe
 		return nil, errors.New("SSH credential invalid")
 	}
 	return key, nil
-}
-
-// FileAuthorizer supports trusted local provisioning and rereads on every check.
-func FileAuthorizer(path string) Authorizer {
-	return func(ctx context.Context, a Authorization) (*Grant, error) {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, errors.New("SSH grants unavailable")
-		}
-		var entries []struct {
-			Route     string `yaml:"route"`
-			PublicKey string `yaml:"public_key"`
-			Grant     Grant  `yaml:"grant"`
-		}
-		if yaml.Unmarshal(data, &entries) != nil {
-			return nil, errors.New("SSH grants invalid")
-		}
-		for _, e := range entries {
-			if e.Route == a.Route && e.PublicKey == a.PublicKey {
-				if a.Destination != "" && a.Destination != e.Grant.Destination {
-					continue
-				}
-				return &e.Grant, nil
-			}
-		}
-		return nil, fmt.Errorf("SSH access denied")
-	}
 }

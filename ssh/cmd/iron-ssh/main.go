@@ -34,7 +34,6 @@ func run(path string, logger *slog.Logger) error {
 		ClientPublicKey string    `yaml:"client_public_key"`
 		AuthorizeURL    string    `yaml:"authorize_url"`
 		TokenEnv        string    `yaml:"token_env"`
-		GrantsFile      string    `yaml:"grants_file"`
 		DenyCIDRs       []string  `yaml:"upstream_deny_cidrs"`
 	}
 	data, err := os.ReadFile(path)
@@ -57,18 +56,14 @@ func run(path string, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("sandbox public key invalid")
 	}
-	var auth sshproxy.Authorizer
-	if cfg.AuthorizeURL != "" && cfg.GrantsFile == "" {
-		token := os.Getenv(cfg.TokenEnv)
-		if token == "" {
-			return fmt.Errorf("SSH proxy token unavailable")
-		}
-		auth = sshproxy.HTTPAuthorizer(cfg.AuthorizeURL, token)
-	} else if cfg.GrantsFile != "" && cfg.AuthorizeURL == "" {
-		auth = sshproxy.FileAuthorizer(cfg.GrantsFile)
-	} else {
-		return fmt.Errorf("exactly one SSH authorizer required")
+	if cfg.AuthorizeURL == "" {
+		return fmt.Errorf("SSH authorization URL required")
 	}
+	token := os.Getenv(cfg.TokenEnv)
+	if token == "" {
+		return fmt.Errorf("SSH proxy token unavailable")
+	}
+	auth := sshproxy.HTTPAuthorizer(cfg.AuthorizeURL, token)
 	if cfg.DenyCIDRs == nil {
 		cfg.DenyCIDRs = dnsguard.DefaultDenyCIDRs
 	}
