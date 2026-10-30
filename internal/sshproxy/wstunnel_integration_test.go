@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func TestRealWstunnel(t *testing.T) {
+func TestWstunnelIntegration(t *testing.T) {
 	target := os.Getenv("IRON_SSH_WSTUNNEL_TEST_URL")
 	if target == "" {
 		t.Skip("set IRON_SSH_WSTUNNEL_TEST_URL and IRON_SSH_WSTUNNEL_TEST_CA for a local OpenSSH/wstunnel fixture")
