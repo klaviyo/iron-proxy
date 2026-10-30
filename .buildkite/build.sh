@@ -30,7 +30,9 @@ compiler_container=$(docker create --user "$(id -u):$(id -g)" \
   -e "IRON_PROXY_BUILD_VERSION=$BUILDKITE_COMMIT" \
   golang:1.27.3-alpine sh -ec \
   'mkdir -p /tmp/output/linux/amd64
-   go build -trimpath -ldflags "-s -w -X github.com/ironsh/iron-proxy/internal/version.Version=$IRON_PROXY_BUILD_VERSION" -o /tmp/output/linux/amd64/iron-proxy ./cmd/iron-proxy')
+   go build -trimpath -ldflags "-s -w -X github.com/ironsh/iron-proxy/internal/version.Version=$IRON_PROXY_BUILD_VERSION" -o /tmp/output/linux/amd64/iron-proxy ./cmd/iron-proxy
+   cd ssh
+   go build -trimpath -ldflags "-s -w" -o /tmp/output/linux/amd64/iron-ssh ./cmd/iron-ssh')
 docker start --attach "$compiler_container"
 docker cp "$compiler_container:/tmp/output/linux" "$build_context/"
 cp "$repo_dir/Dockerfile.release" "$build_context/Dockerfile.release"
