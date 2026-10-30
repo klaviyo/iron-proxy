@@ -1,4 +1,4 @@
-// Package sshproxy implements an isolated sshpiper credential boundary.
+// Package sshproxy implements an SSH credential boundary within iron-proxy.
 package sshproxy
 
 import (
@@ -8,9 +8,12 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"os"
 	"time"
 
+	"github.com/ironsh/iron-proxy/internal/dnsguard"
 	"github.com/ironsh/iron-proxy/internal/transform/secrets"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
@@ -88,4 +91,46 @@ func signer(ctx context.Context, node yaml.Node, logger *slog.Logger) (ssh.Signe
 		return nil, errors.New("SSH credential invalid")
 	}
 	return key, nil
+}
+
+// LoadFromNode prepares the optional SSH listener before other services start.
+// An absent block disables SSH. The real key and bearer token stay in the proxy.
+func LoadFromNode(ctx context.Context, node yaml.Node, logger *slog.Logger) (*Server, net.Listener, error) {
+	if node.Kind == 0 || node.Tag == "!!null" {
+		return nil, nil, nil
+	}
+	var cfg struct {
+		Listen          string    `yaml:"listen"`
+		HostKey         yaml.Node `yaml:"host_key"`
+		ClientPublicKey string    `yaml:"client_public_key"`
+		AuthorizeURL    string    `yaml:"authorize_url"`
+		TokenEnv        string    `yaml:"token_env"`
+		DenyCIDRs       []string  `yaml:"upstream_deny_cidrs"`
+	}
+	if node.Decode(&cfg) != nil || cfg.Listen == "" || cfg.AuthorizeURL == "" {
+		return nil, nil, errors.New("SSH listen address and authorization URL required")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	host, err := ParseHostKey(ctx, cfg.HostKey, logger)
+	if err != nil {
+		return nil, nil, err
+	}
+	key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(cfg.ClientPublicKey))
+	if err != nil {
+		return nil, nil, errors.New("sandbox SSH public key invalid")
+	}
+	token := os.Getenv(cfg.TokenEnv)
+	if token == "" {
+		return nil, nil, errors.New("SSH proxy token unavailable")
+	}
+	if cfg.DenyCIDRs == nil {
+		cfg.DenyCIDRs = dnsguard.DefaultDenyCIDRs
+	}
+	listener, err := net.Listen("tcp", cfg.Listen)
+	if err != nil {
+		return nil, nil, errors.New("SSH listener unavailable")
+	}
+	server := &Server{HostKey: host, ClientPublicKey: key, Authorize: HTTPAuthorizer(cfg.AuthorizeURL, token), DenyCIDRs: cfg.DenyCIDRs, Logger: logger}
+	return server, listener, nil
 }

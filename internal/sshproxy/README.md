@@ -1,13 +1,15 @@
-# Iron SSH companion
+# Iron SSH listener
 
-`iron-ssh` uses sshpiper's SSH transport library in an isolated Go module.
-The library replacement does not affect the HTTP proxy's crypto dependency.
-Run it beside the HTTP proxy with the same per-sandbox network boundary.
+SSH runs as an optional listener inside the main `iron-proxy` process. Build and
+test it with the normal repository commands; no separate executable or module
+is needed. The module uses sshpiper's crypto replacement for transport support.
 
-Build from this directory: `go build ./cmd/iron-ssh`. Release images package
-both binaries using the repository's existing release Dockerfile.
+Configure a top-level `ssh:` block in the regular YAML file, or set
+`IRON_SSH_CONFIG_JSON` to the equivalent JSON object for managed deployments.
+SSH is disabled when configuration is absent. Pass `--ssh` to require a configured
+listener at startup. Listener settings apply at startup.
 
-The `-config` YAML/JSON file contains `listen`, `host_key` (an existing Iron
+The SSH configuration contains `listen`, `host_key` (an existing Iron
 secret source), `client_public_key` (registered by the trusted control plane),
 `authorize_url`, and `token_env`. The environment variable named by `token_env`
 is a proxy-only bearer token. Configuration and host keys must never be mounted
@@ -45,6 +47,6 @@ change to any grant field except expiry closes the active connection. Authorizer
 failures fail closed. Reconnection never retries a remote command automatically.
 A terminated channel does not guarantee detached remote descendants have exited.
 
-Run `go test -race ./...` in this module. No SSH functionality is enabled merely
+Run `go test -race ./internal/sshproxy`. No SSH functionality is enabled merely
 by installing this binary; the embedding platform must supply the paired key,
 authenticated authorizer, destination grants, and lifecycle wiring.

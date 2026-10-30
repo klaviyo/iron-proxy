@@ -23,12 +23,6 @@ jobs:
       - name: Run tests
         run: go test -v -race -count=1 ./...
 
-      - name: Test SSH companion
-        working-directory: ssh
-        run: |
-          go test -v -race -count=1 ./...
-          go vet ./...
-
       - uses: ironsh/iron-proxy-action/summary@fa1fd82ec32396d044deba7040a6db576bec927a # v0.1.4
         if: always()
 
